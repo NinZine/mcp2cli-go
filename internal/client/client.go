@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/client/transport"
@@ -49,13 +51,21 @@ type Result struct {
 type Conn struct {
 	c      *client.Client
 	stderr *syncBuffer
+
+	// clientVersion is the version reported to the server during Initialize.
+	// It is embedded in the per-request _meta for modern connections.
+	clientVersion string
+	// requestID is an atomic counter for raw JSON-RPC requests. It is an
+	// atomic.Int64 (rather than a bare int64 used with atomic.AddInt64) so the
+	// counter is always 64-bit aligned, including on 32-bit platforms.
+	requestID atomic.Int64
 }
 
 // Connect builds the appropriate transport for srv, starts it, and performs the
 // MCP initialize handshake exactly once. The caller owns ctx and must call
 // Close.
 func Connect(ctx context.Context, srv *config.Server, clientVersion string) (*Conn, error) {
-	conn := &Conn{}
+	conn := &Conn{clientVersion: clientVersion}
 
 	var c *client.Client
 	var err error
@@ -125,16 +135,113 @@ func (c *Conn) ProtocolVersion() string {
 	return c.c.ProtocolVersion()
 }
 
-// ListTools returns all tools, following pagination.
+// ListTools returns all tools, following pagination, with each tool's
+// inputSchema preserved exactly as the server sent it. It fetches tools/list
+// from the raw transport rather than the typed API, because the typed API
+// marshals mcp-go's fixed ToolArgumentsSchema and silently drops schema
+// keywords (title, oneOf, $ref, ...) and synthesizes required/properties.
+//
+// This path deliberately bypasses the typed client's c.rememberTools and the
+// x-mcp-header/param-cache machinery: the CLI lists and calls on separate
+// connections, so there is never a cached tool definition to derive Mcp-Param-*
+// headers from, and the lossy typed schema would discard the headers' source
+// annotations anyway. The hand-built _meta below mirrors mcp-go's
+// applyRequestMeta (protocol version, client capabilities, client info) minus
+// the log-level field and the handler-derived capabilities, neither of which
+// this CLI configures.
 func (c *Conn) ListTools(ctx context.Context) ([]Tool, error) {
-	tools := []Tool{}
-	for tool, err := range c.c.IterTools(ctx, mcp.ListToolsRequest{}) {
+	out := []Tool{}
+	cursor := ""
+	// seenCursors guards against a misbehaving server that returns a constant
+	// (or cyclic) nextCursor: without it, pagination would spin until the
+	// context deadline. On a repeat, stop and return what has been gathered.
+	seenCursors := map[string]bool{}
+	for {
+		params := map[string]any{}
+		if cursor != "" {
+			params["cursor"] = cursor
+		}
+
+		protocolVersion := ""
+		if c.c != nil {
+			protocolVersion = c.c.ProtocolVersion()
+		}
+		// The stateless protocol core requires the protocol version, client
+		// capabilities, and client identity on every request. A partial _meta
+		// is rejected, so include all three (or none, for legacy connections).
+		if mcp.IsModernProtocol(protocolVersion) {
+			params["_meta"] = map[string]any{
+				mcp.MetaKeyProtocolVersion:    protocolVersion,
+				mcp.MetaKeyClientCapabilities: map[string]any{},
+				mcp.MetaKeyClientInfo: map[string]any{
+					"name":    "mcp",
+					"version": c.clientVersion,
+				},
+			}
+		}
+
+		var header http.Header
+		if pj, err := json.Marshal(params); err == nil {
+			for k, v := range mcp.StandardHeaders(protocolVersion, mcp.MethodToolsList, pj) {
+				if header == nil {
+					header = http.Header{}
+				}
+				header.Set(k, v)
+			}
+		}
+
+		resp, err := c.c.GetTransport().SendRequest(ctx, transport.JSONRPCRequest{
+			JSONRPC: mcp.JSONRPC_VERSION,
+			ID:      mcp.NewRequestId(c.requestID.Add(1)),
+			Method:  string(mcp.MethodToolsList),
+			Params:  params,
+			Header:  header,
+		})
 		if err != nil {
 			return nil, c.annotate(err)
 		}
-		tools = append(tools, toTool(tool))
+		if resp.Error != nil {
+			return nil, c.annotate(fmt.Errorf("tools/list: %s", resp.Error.Message))
+		}
+
+		var result struct {
+			Tools []struct {
+				Name        string          `json:"name"`
+				Description string          `json:"description"`
+				InputSchema json.RawMessage `json:"inputSchema"`
+			} `json:"tools"`
+			NextCursor string `json:"nextCursor"`
+		}
+		if err := json.Unmarshal(resp.Result, &result); err != nil {
+			return nil, c.annotate(fmt.Errorf("parsing tools/list: %w", err))
+		}
+
+		for _, t := range result.Tools {
+			schema := map[string]any{}
+			if len(t.InputSchema) > 0 {
+				if err := json.Unmarshal(t.InputSchema, &schema); err != nil {
+					return nil, c.annotate(fmt.Errorf("parsing inputSchema for %s: %w", t.Name, err))
+				}
+				if schema == nil {
+					schema = map[string]any{}
+				}
+			}
+			out = append(out, Tool{
+				Name:        t.Name,
+				Description: t.Description,
+				InputSchema: schema,
+			})
+		}
+
+		if result.NextCursor == "" {
+			return out, nil
+		}
+		if seenCursors[result.NextCursor] {
+			return out, nil
+		}
+		seenCursors[result.NextCursor] = true
+		cursor = result.NextCursor
 	}
-	return tools, nil
 }
 
 // CallTool invokes a tool with the given arguments.
@@ -149,18 +256,6 @@ func (c *Conn) CallTool(ctx context.Context, name string, args map[string]any) (
 		return nil, c.annotate(err)
 	}
 	return toResult(res), nil
-}
-
-func toTool(t mcp.Tool) Tool {
-	schema := map[string]any{}
-	if b, err := json.Marshal(t.InputSchema); err == nil {
-		_ = json.Unmarshal(b, &schema)
-	}
-	return Tool{
-		Name:        t.Name,
-		Description: t.Description,
-		InputSchema: schema,
-	}
 }
 
 func toResult(res *mcp.CallToolResult) *Result {

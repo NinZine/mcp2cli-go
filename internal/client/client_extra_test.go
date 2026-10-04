@@ -1,11 +1,27 @@
 package client
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
+
+// toTool converts a typed mcp.Tool via mcp-go's fixed ToolArgumentsSchema. It
+// lives only in the tests: ListTools no longer uses it because that conversion
+// is lossy (it drops schema keywords and synthesizes required/properties).
+func toTool(t mcp.Tool) Tool {
+	schema := map[string]any{}
+	if b, err := json.Marshal(t.InputSchema); err == nil {
+		_ = json.Unmarshal(b, &schema)
+	}
+	return Tool{
+		Name:        t.Name,
+		Description: t.Description,
+		InputSchema: schema,
+	}
+}
 
 // SPEC §8.1 — SSE is selected when the URL path ends in /sse, otherwise
 // Streamable HTTP is used.

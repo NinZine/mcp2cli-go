@@ -183,7 +183,7 @@ func parse(content string) (*Set, error) {
 	sort.Strings(names)
 
 	for _, name := range names {
-		if reservedNames[name] {
+		if IsReserved(name) {
 			set.Warnings = append(set.Warnings,
 				fmt.Sprintf("server %q is a reserved name; skipping", name))
 			continue

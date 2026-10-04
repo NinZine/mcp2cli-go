@@ -173,6 +173,8 @@ func (r *Renderer) ToolInfo(tools []client.Tool) error {
 			fmt.Fprintf(r.Out, "    %s%s\n", line, suffix)
 		}
 	}
+	fmt.Fprintln(r.Out)
+	fmt.Fprintf(r.Out, "%d tool(s) available\n", len(tools))
 	return nil
 }
 

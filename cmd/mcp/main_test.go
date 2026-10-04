@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -48,6 +50,20 @@ func TestLoggerLevelGating(t *testing.T) {
 	l.debugf("d")
 	if !strings.Contains(buf.String(), "debug: d") {
 		t.Fatalf("debug must be shown at debug: %q", buf.String())
+	}
+}
+
+// An empty server name must be rejected before any config file is created.
+func TestRunAddRejectsEmptyName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	t.Setenv("MCP_CONFIG_PATH", path)
+
+	var stderr bytes.Buffer
+	if code := runAdd(&stderr, []string{"--url", "https://example.invalid/mcp", ""}); code == 0 {
+		t.Fatalf("runAdd with empty name must fail, stderr=%q", stderr.String())
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("empty name must not create a config file (stat err=%v)", err)
 	}
 }
 

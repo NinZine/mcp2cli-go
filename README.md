@@ -154,11 +154,29 @@ completions, healthcheck
 | `mcp <server> --info` | List tools with input schemas |
 | `mcp <server> --health` | Connect, confirm reachability, print protocol version |
 | `mcp <server> <tool> [json]` | Call a tool |
+| `mcp add --url <url> <name>` | Add an HTTP server to the config file |
+| `mcp remove <name>` | Remove a server from the config file |
 | `mcp config path` | Print the resolved config file path |
 | `mcp config edit` | Open the config file in `$EDITOR` |
 | `mcp completions <bash\|zsh\|fish>` | Print a shell completion script |
 
 Any other first argument is treated as a server name. If it is not found, `mcp` prints `server "<name>" not found in config` to stderr and exits 1.
+
+### Adding and removing servers
+
+`mcp add --url <url> <name>` adds an HTTP server and `mcp remove <name>` deletes one. Both edit the **file** at the resolved config path (`mcp config path`) — never the inline `MCP_SERVERS_CONFIG` — and create parent directories as needed.
+
+- `add` requires `--url` and exactly one name; without `--url` it prints the command usage and exits 1. The URL must be absolute with an `http` or `https` scheme. A reserved name (see above) or a name already present is rejected.
+- `remove` requires the config file to exist and the name to be present.
+
+On success each command prints one message to **stderr** and exits 0; any error exits 1:
+
+```sh
+Server "<name>" added to <path>
+Server "<name>" removed from <path>
+```
+
+Because both rewrite the document through a JSON parser, `//` and `/* */` comments (accepted and stripped on read) and formatting are not preserved on write; unknown top-level keys and unrelated servers are preserved.
 
 ### Global flags
 
@@ -177,6 +195,11 @@ Any other first argument is treated as a server name. If it is not found, `mcp` 
 - In text mode, tool-level errors are printed to stderr with an `error:` prefix.
 
 If a tool result is flagged `isError`, the exit code is still `0` for a successful protocol exchange (the tool ran and reported an error). Only transport/protocol failures exit non-zero.
+
+### `--info` output
+
+- JSON output includes each tool's `inputSchema` **verbatim**, exactly as the server sent it. It is not normalized or synthesized: unmodeled keywords such as `title`, `oneOf`, and `$ref` are preserved, and absent keywords (`required`, `properties`) are not added. A tool with no schema renders as `{}`.
+- Text output lists each tool's parameters and ends with a blank line and `N tool(s) available`, matching `--list`. A tool with no parameters shows `(none)`.
 
 ## Tool arguments
 

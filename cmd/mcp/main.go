@@ -36,6 +36,8 @@ Usage:
   mcp <server> --info                 List tools with input schemas
   mcp <server> --health               Check if server is reachable
   mcp <server> <tool> [json]          Call a tool (reads JSON from stdin if omitted)
+  mcp add --url <url> <name>          Add an HTTP server to the config
+  mcp remove <name>                    Remove a server from the config
   mcp config path                     Show config file path
   mcp config edit                     Open config in $EDITOR
   mcp completions <shell>             Generate shell completions (bash, zsh, fish)
@@ -86,6 +88,10 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "--list":
 		return runListServers(renderer, stderr)
+	case "add":
+		return runAdd(stderr, args[1:])
+	case "remove":
+		return runRemove(stderr, args[1:])
 	case "config":
 		return runConfig(renderer, stderr, args[1:], stdout)
 	case "completions":
@@ -150,6 +156,86 @@ func runListServers(r *output.Renderer, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "mcp: %v\n", err)
 		return 1
 	}
+	return 0
+}
+
+// ---------------------------------------------------------------------------
+// add / remove (explicit config-file edits)
+// ---------------------------------------------------------------------------
+
+const addUsage = `Usage:
+  mcp add --url <url> <name>          Add an HTTP server to the config
+`
+
+const removeUsage = `Usage:
+  mcp remove <name>                    Remove a server from the config
+`
+
+// runAdd edits the config *file* resolved by config.ResolvePath() (never the
+// inline MCP_SERVERS_CONFIG) to add an HTTP server.
+func runAdd(stderr io.Writer, args []string) int {
+	rawURL := ""
+	var names []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--url":
+			if i+1 >= len(args) {
+				fmt.Fprint(stderr, addUsage)
+				return 1
+			}
+			rawURL = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--url="):
+			rawURL = strings.TrimPrefix(a, "--url=")
+		case strings.HasPrefix(a, "-"):
+			fmt.Fprint(stderr, addUsage)
+			return 1
+		default:
+			names = append(names, a)
+		}
+	}
+	if rawURL == "" || len(names) != 1 {
+		fmt.Fprint(stderr, addUsage)
+		return 1
+	}
+
+	name := names[0]
+	if name == "" {
+		fmt.Fprint(stderr, "mcp: server name must not be empty\n")
+		return 1
+	}
+	if config.IsReserved(name) {
+		fmt.Fprintf(stderr, "mcp: %q is a reserved server name\n", name)
+		return 1
+	}
+
+	path, warnings := config.ResolvePath()
+	writeWarnings(stderr, warnings)
+	if err := config.AddHTTPServer(path, name, rawURL); err != nil {
+		fmt.Fprintf(stderr, "mcp: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stderr, "Server %q added to %s\n", name, path)
+	return 0
+}
+
+// runRemove edits the config *file* resolved by config.ResolvePath() (never the
+// inline MCP_SERVERS_CONFIG) to delete a server.
+func runRemove(stderr io.Writer, args []string) int {
+	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
+		fmt.Fprint(stderr, removeUsage)
+		return 1
+	}
+	name := args[0]
+
+	path, warnings := config.ResolvePath()
+	writeWarnings(stderr, warnings)
+	if err := config.RemoveServer(path, name); err != nil {
+		fmt.Fprintf(stderr, "mcp: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stderr, "Server %q removed from %s\n", name, path)
 	return 0
 }
 
@@ -396,7 +482,7 @@ _mcp() {
   COMPREPLY=()
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  local commands="--list config completions --json --version --help -V -v -h"
+  local commands="--list add remove config completions --json --version --help -V -v -h"
   if [ "$prev" = "completions" ]; then
     COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
     return 0
@@ -413,7 +499,7 @@ complete -F _mcp mcp
 	"zsh": `#compdef mcp
 _mcp() {
   local -a commands
-  commands=(--list config completions --json --version --help -V -v -h)
+  commands=(--list add remove config completions --json --version --help -V -v -h)
   _arguments '1: :($commands)' '*::arg:->args'
 }
 compdef _mcp mcp
@@ -421,6 +507,8 @@ compdef _mcp mcp
 	"fish": `# fish completion for mcp
 complete -c mcp -f
 complete -c mcp -n '__fish_use_subcommand' -a '--list' -d 'List configured servers'
+complete -c mcp -n '__fish_use_subcommand' -a 'add' -d 'Add an HTTP server to the config'
+complete -c mcp -n '__fish_use_subcommand' -a 'remove' -d 'Remove a server from the config'
 complete -c mcp -n '__fish_use_subcommand' -a 'config' -d 'Config commands'
 complete -c mcp -n '__fish_use_subcommand' -a 'completions' -d 'Shell completions'
 complete -c mcp -n '__fish_seen_subcommand_from completions' -a 'bash zsh fish'
