@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"mcp/internal/client"
+	"github.com/NinZine/mcp2cli-go/internal/client"
 )
 
 // Renderer writes either JSON or text depending on JSON.

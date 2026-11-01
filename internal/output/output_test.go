@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"mcp/internal/client"
+	"github.com/NinZine/mcp2cli-go/internal/client"
 )
 
 func newRenderer() (*Renderer, *bytes.Buffer, *bytes.Buffer) {

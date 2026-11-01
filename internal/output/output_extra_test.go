@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"mcp/internal/client"
+	"github.com/NinZine/mcp2cli-go/internal/client"
 )
 
 // SPEC §9.5 — an unknown content type that nonetheless carries text renders the

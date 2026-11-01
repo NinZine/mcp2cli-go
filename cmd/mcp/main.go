@@ -18,10 +18,10 @@ import (
 
 	"golang.org/x/term"
 
-	"mcp/internal/client"
-	"mcp/internal/config"
-	"mcp/internal/output"
-	"mcp/internal/preflight"
+	"github.com/NinZine/mcp2cli-go/internal/client"
+	"github.com/NinZine/mcp2cli-go/internal/config"
+	"github.com/NinZine/mcp2cli-go/internal/output"
+	"github.com/NinZine/mcp2cli-go/internal/preflight"
 )
 
 // version is injected at build time via -ldflags "-X main.version=...".

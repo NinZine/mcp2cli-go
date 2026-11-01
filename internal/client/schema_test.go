@@ -13,7 +13,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"mcp/internal/config"
+	"github.com/NinZine/mcp2cli-go/internal/config"
 )
 
 // ---------------------------------------------------------------------------

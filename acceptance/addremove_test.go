@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"mcp/internal/config"
+	"github.com/NinZine/mcp2cli-go/internal/config"
 )
 
 // ---------------------------------------------------------------------------

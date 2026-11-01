@@ -1,4 +1,4 @@
-module mcp
+module github.com/NinZine/mcp2cli-go
 
 go 1.26.8
 

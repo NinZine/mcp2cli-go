@@ -20,7 +20,7 @@ import (
 	"github.com/mark3labs/mcp-go/client/transport"
 	"github.com/mark3labs/mcp-go/mcp"
 
-	"mcp/internal/config"
+	"github.com/NinZine/mcp2cli-go/internal/config"
 )
 
 // Tool is the neutral representation of an MCP tool definition.

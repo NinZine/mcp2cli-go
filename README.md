@@ -18,10 +18,13 @@ Call [Model Context Protocol](https://modelcontextprotocol.io) (MCP) servers fro
 The binary is named `mcp`.
 
 ```sh
-# Build into the current directory
+# Install the latest release into $GOBIN / $GOPATH/bin
+go install github.com/NinZine/mcp2cli-go/cmd/mcp@latest
+
+# Or build from a local checkout into the current directory
 go build -o mcp ./cmd/mcp
 
-# Install into $GOBIN / $GOPATH/bin
+# Or install from a local checkout into $GOBIN / $GOPATH/bin
 go install ./cmd/mcp
 ```
 
